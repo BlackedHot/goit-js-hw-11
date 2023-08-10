@@ -1,102 +1,95 @@
-import SimpleLightbox from "simplelightbox";
-import "simplelightbox/dist/simple-lightbox.min.css";
+//=== Підключення бібліотеки ===
 import Notiflix from 'notiflix';
-import { fetchGalleryPhoto, Per_Page} from "./pixabay-api.js";
-import { createMarkup } from "./templates/pixabay-markup.js";
+// =============================
 
-const formEl=document.querySelector(".search-form");
-const galleryEl = document.querySelector(".gallery");
-const spanEl = document.querySelector(".js-span");
-const target = document.querySelector(".js-guard");
+import {
+  formEl,
+  galleryListEl,
+  loadMoreBtnEl,
+  upScrollBtnEl,
+} from './js/refs.js';
+import { numRequestedPhotos, fetchPhoto } from './js/photo-api.js';
+import { createGalleryMarkup } from './js/markup.js';
+import { simpleLightboxPlugin } from './js/lightbox.js';
+import {
+  loadBtnOff,
+  loadBtnOn,
+  scrollBtnOff,
+  scrollBtnOn,
+} from './js/btn-toggle.js';
+import {
+  smoothScrollGallery,
+  onScrollGalleryStart,
+} from './js/scroll-gallery.js';
 
+loadBtnOff(loadMoreBtnEl);
+scrollBtnOff(upScrollBtnEl);
 
-let currentPage =1;
-let searchQuery = "";
-let total=0;
+let page = 1;
+let photoTitle = '';
 
-formEl.addEventListener("submit", onSearch);
-formEl.addEventListener("change", onChange);
+async function onSearchSubmit(e) {
+  e.preventDefault();
+  galleryListEl.innerHTML = '';
+  loadBtnOff(loadMoreBtnEl);
 
-function onChange(){
-return  searchQuery = formEl.elements.searchQuery.value; 
-}
-
-function clearGallery() {
-  galleryEl.innerHTML = "";
-  total = 0;
-  currentPage = 1;
-  spanEl.textContent = "";
-}
-
-let options = {
-  root : null,
-  rootMargin : "200px",
-  treshold: 1.0,
-};
-
-let observer = new IntersectionObserver(onLoad, options);
-lightbox = new SimpleLightbox('.gallery a', { captionsData: "alt", captionDelay: 250, captionPosition: "bottom" });
-   
-
-function onSearch(evt) {   
-
-  evt.preventDefault();
-
-  clearGallery();
- 
-  observer.observe(target); 
-
-  lightbox.refresh();
-     
-};
-
-
-function onLoad(enries, observer) {
- Notiflix.Notify.success(`we're found enouger ${data.data.hits.length} for your`);
-  enries.forEach((entry) => {
-     
-     if (entry.isIntersecting) {  
-       
-       getPhotoGallery();  
-       
-       lightbox.refresh(); 
-       
+  photoTitle = e.target.firstElementChild.value.trim();
+  if (!photoTitle) {
+    return;
+  }
+  page = 1;
+  try {
+    const data = await fetchPhoto(photoTitle, page);
+    if (!data.hits.length) {
+      Notiflix.Notify.warning(
+        'Sorry, there are no images matching your search query. Please try again.',
+        { position: 'center-center' }
+      );
+      loadBtnOff(loadMoreBtnEl);
+      return;
     }
-  });
-};
+    if (data.hits.length * page === data.totalHits) {
+      loadBtnOff(loadMoreBtnEl);
+    } else {
+      loadBtnOn(loadMoreBtnEl);
+    }
+    Notiflix.Notify.info(`Hooray! We found ${data.totalHits} images.`);
+    galleryMarkupDom(data.hits);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
 
-function getPhotoGallery(){
-  
- 
-  fetchGalleryPhoto(searchQuery, currentPage)
+async function onLoadMoreClick(e) {
+  page += 1;
+  try {
+    const data = await fetchPhoto(photoTitle, page);
+    galleryMarkupDom(data.hits);
+    smoothScrollGallery(galleryListEl);
+    if (numRequestedPhotos * page >= data.totalHits) {
+      loadBtnOff(loadMoreBtnEl);
+      Notiflix.Notify.info(
+        "We're sorry, but you've reached the end of search results."
+      );
+    }
+  } catch (error) {
+    console.log(error.message);
+  }
+}
 
-    .then(data => { 
-      
-      total += data.data.hits.length;
-        
-      currentPage += 1;    
-    
-      
-      if(currentPage === Math.floor(data.data.totalHits/Per_Page) || (data.data.hits.length < 40)){   
-               
-        observer.unobserve(target);
+function galleryMarkupDom(photoArr) {
+  const galleryMarkup = createGalleryMarkup(photoArr);
+  galleryListEl.insertAdjacentHTML('beforeend', galleryMarkup);
+  simpleLightboxPlugin();
+}
 
-        spanEl.textContent = "We're sorry, but you've reached the end of search results";
-        
-        return;
-      }
-        
-      addMarkup(galleryEl, createMarkup(data.data.hits));       
-     
-      lightbox.refresh();   
-      
-    })
+formEl.addEventListener('submit', onSearchSubmit);
+loadMoreBtnEl.addEventListener('click', onLoadMoreClick);
+upScrollBtnEl.addEventListener('click', onScrollGalleryStart);
 
-    .catch(err => Notiflix.Report.failure('Error', 'Sorry, there are no images matching your search query. Please try again', 'Ok'));       
-};
-
-function addMarkup(element, markup) {
-  
-  element.insertAdjacentHTML("beforeend", markup); 
-
-};
+window.addEventListener('scroll', () => {
+  // визначаємо величину прокручування
+  const scrollY = window.scrollY || document.documentElement.scrollTop;
+  // якщо сторінка прокручена більше ніж на 400px, то кнопку показуємо, інакше ховаємо
+  scrollY > 400 ? scrollBtnOn(upScrollBtnEl) : scrollBtnOff(upScrollBtnEl);
+});
